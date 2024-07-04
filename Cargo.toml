@@ -1,0 +1,58 @@
+[package]
+name = "metrics-gen"
+authors = ["Oguz Bilgener <oguz@bilgener.me>"]
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+derivative = "2"
+futures-util = { version = "0.3", features = ["sink"] }
+humantime-serde = "1"
+http = "1"
+indicatif = "0.17"
+# Add ability to reset collected samples.
+openmetrics-parser = { git = "https://github.com/oguzbilgener/openmetrics-parser", rev = "07a94d82054f649586c63cc4840d5bba48d779cb" }
+prost = "0.12"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+reqwest = { version = "0.12", features = [
+    "rustls-tls",
+], default-features = false }
+thiserror = "1"
+tokio = { version = "1", features = [
+    "macros",
+    "io-util",
+    "rt",
+    "rt-multi-thread",
+    "net",
+    "signal",
+    "net",
+    "sync",
+    "fs",
+] }
+tracing = "0.1.40"
+tracing-indicatif = "0.3"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+uuid = {version ="1", features = ["v4"] }
+url = "2"
+walkdir = "2"
+snap = "1.1.1"
+
+
+[build-dependencies]
+prost-build = { version = "0.12" }
+
+[profile.release]
+lto = true
+strip = "symbols"
+
+
+[lints.clippy]
+pedantic = "warn"
+cargo = "warn"
+all = "warn"
