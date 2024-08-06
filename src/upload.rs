@@ -56,7 +56,18 @@ pub(crate) async fn upload_remote_write(
         .unwrap_or_else(|| format!("metrics-gen/{}", env!("CARGO_PKG_VERSION")));
     let url: Url = url.parse()?;
     let req = write_request.build_http_request(client, &url, headers, &user_agent)?;
-    let _ = req.send().await?.error_for_status()?;
+    let response = req.send().await?;
+    match response.status().as_u16() {
+        200 => (),
+        201..=399 => {
+            let body = response.text().await?;
+            trace!("Uploaded metrics: {}", body);
+        }
+        code => {
+            let body = response.text().await?;
+            error!(%code, %body, "Error uploading metrics");
+        }
+    }
 
     Ok(())
 }
