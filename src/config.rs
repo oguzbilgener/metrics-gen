@@ -15,6 +15,9 @@ pub(crate) struct AppConfig {
     #[derivative(Default(value = "String::from(\"./metrics\")"))]
     pub(crate) metrics_dir: String,
 
+    #[serde(default)]
+    pub(crate) mode: Mode,
+
     #[serde(with = "humantime_serde")]
     #[derivative(Default(value = "Duration::from_secs(0)"))]
     pub(crate) upload_cooldown: Duration,
@@ -39,6 +42,14 @@ pub(crate) struct AppConfig {
     #[serde(default)]
     #[derivative(Default(value = "Some(Randomization::default())"))]
     pub(crate) randomization: Option<Randomization>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub(crate) enum Mode {
+    #[default]
+    Horizontal,
+    Vertical,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -80,6 +91,14 @@ impl AppConfig {
         let config: Self = serde_yaml::from_str(&config)?;
         config.validate()?;
         Ok(config)
+    }
+
+    pub(crate) fn label_keys(&self) -> Vec<String> {
+        self.labels.iter().map(|label| label.name.clone()).collect()
+    }
+
+    pub(crate) fn label_counts(&self) -> Vec<u64> {
+        self.labels.iter().map(|label| label.count).collect()
     }
 }
 

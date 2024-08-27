@@ -15,10 +15,12 @@
 //! # metrics-gen
 #[doc = include_str!("../README.md")]
 mod config;
+mod execution;
 mod generate;
 mod metric_file;
 mod runner;
 mod upload;
+mod visitor;
 
 use std::{env, str::FromStr as _};
 
