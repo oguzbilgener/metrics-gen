@@ -193,18 +193,17 @@ async fn acquire_permit(semaphore: Arc<Semaphore>) -> anyhow::Result<OwnedSemaph
 struct LabelValuesIter<'v> {
     all_ids: &'v [Vec<String>],
     current: Vec<usize>,
+    done: bool,
 }
 
 impl<'v> LabelValuesIter<'v> {
     fn new(all_ids: &'v [Vec<String>]) -> Self {
+        assert!(!all_ids.is_empty(), "all_ids must not be empty");
         Self {
             all_ids,
             current: vec![0; all_ids.len()],
+            done: false,
         }
-    }
-
-    fn is_done(&self) -> bool {
-        self.current.iter().all(|&i| i == self.all_ids.len())
     }
 }
 
@@ -212,16 +211,27 @@ impl<'v> Iterator for LabelValuesIter<'v> {
     type Item = Vec<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.is_done() {
+        if self.done {
             return None;
         }
-        Some(
+        let answer = Some(
             self.current
                 .iter()
                 .enumerate()
                 .map(|(i, &j)| self.all_ids[i][j].clone())
                 .collect(),
-        )
+        );
+        let mut done = true;
+        for i in (0..self.current.len()).rev() {
+            if self.current[i] + 1 < self.all_ids[i].len() {
+                self.current[i] += 1;
+                done = false;
+                break;
+            }
+            self.current[i] = 0;
+        }
+        self.done = done;
+        answer
     }
 }
 
@@ -237,5 +247,47 @@ mod tests {
         for (i, ids) in result.iter().enumerate() {
             assert_eq!(ids.len() as u64, all_ids[i]);
         }
+    }
+
+    #[test]
+    fn test_label_values_iter() {
+        let all_ids = Horizontal::generate_all_ids(&[1, 2, 3]);
+
+        let mut iter = LabelValuesIter::new(&all_ids);
+        assert_eq!(
+            iter.current,
+            vec![0, 0, 0]
+        );
+        assert!(iter.next().is_some());
+        assert_eq!(
+            iter.current,
+            vec![0, 0, 1]
+        );
+        assert!(iter.next().is_some());
+        assert_eq!(
+            iter.current,
+            vec![0, 0, 2]
+        );
+        assert!(iter.next().is_some());
+        assert_eq!(
+            iter.current,
+            vec![0, 1, 0]
+        );
+        assert!(iter.next().is_some());
+        assert_eq!(
+            iter.current,
+            vec![0, 1, 1]
+        );
+        assert!(iter.next().is_some());
+        assert_eq!(
+            iter.current,
+            vec![0, 1, 2]
+        );
+        assert!(iter.next().is_some());
+        assert_eq!(
+            iter.current,
+            vec![0, 0, 0]
+        );
+        assert_eq!(iter.next(), None);
     }
 }

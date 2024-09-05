@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use anyhow::Context;
 use derivative::Derivative;
 
 use serde::Deserialize;
@@ -42,6 +43,9 @@ pub(crate) struct AppConfig {
     #[serde(default)]
     #[derivative(Default(value = "Some(Randomization::default())"))]
     pub(crate) randomization: Option<Randomization>,
+
+    #[serde(default)]
+    pub(crate) ignore: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
@@ -87,7 +91,9 @@ pub(crate) struct Label {
 
 impl AppConfig {
     pub(crate) async fn from_file(path: &str) -> anyhow::Result<Self> {
-        let config = tokio::fs::read_to_string(path).await?;
+        let config = tokio::fs::read_to_string(path)
+            .await
+            .with_context(|| format!("Could not read the config file at path {path}"))?;
         let config: Self = serde_yaml::from_str(&config)?;
         config.validate()?;
         Ok(config)

@@ -17,7 +17,12 @@ pub(crate) async fn run(
     config: AppConfig,
     metric_files: Vec<MetricFile>,
 ) -> anyhow::Result<()> {
-    let total_execution_count: u64 = config.labels.iter().map(|label| label.count).sum();
+    let total_execution_count: u64 = config.labels.iter().map(|label| label.count).reduce(
+        |acc, count| {
+            let acc: u64 = acc;
+            acc * count
+        },
+    ).context("No labels defined")?;
 
     let header_span = info_span!("run");
     header_span.pb_set_style(&ProgressStyle::default_bar());
@@ -64,7 +69,7 @@ pub(crate) async fn run(
 }
 
 async fn run_collector(num_tasks: usize, mut rx: mpsc::Receiver<TaskResult>) -> anyhow::Result<()> {
-    tracing::trace!("Running collector");
+    tracing::trace!(count = num_tasks, "Running collector");
     let mut collected = 0;
     while collected < num_tasks {
         let res = rx

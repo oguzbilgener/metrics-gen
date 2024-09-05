@@ -73,7 +73,7 @@ pub(crate) async fn upload_remote_write(
 }
 
 pub(crate) fn write_to_stdout(write_request: &WriteRequest) {
-    trace!("Write request to stdout: {:?}", write_request);
+    trace!("Write request to stdout: {:?}", write_request.timeseries.len());
 }
 
 impl WriteRequest {
