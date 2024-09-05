@@ -59,7 +59,7 @@ pub(crate) async fn run(
             label_keys,
             &label_counts,
         )
-        .visit_all()
+        .visit_all(total_execution_count)
         .await?;
     }
 
@@ -75,7 +75,7 @@ async fn run_collector(num_tasks: usize, mut rx: mpsc::Receiver<TaskResult>) -> 
         let res = rx
             .recv()
             .await
-            .with_context(|| "Collector channel closed")?;
+            .with_context(|| "Collector channel unexpectedly closed")?;
         if let Some(err) = res.error {
             tracing::error!(%err, "Task failed");
         } else {

@@ -52,6 +52,7 @@ impl Vertical {
             if level == self.label_keys.len() {
                 let permit = acquire_permit(self.semaphore.clone()).await?;
                 let execution = Execution::new(
+                    0,
                     self.config.clone(),
                     self.label_keys.clone(),
                     values.clone(),
@@ -92,7 +93,7 @@ impl Horizontal {
         metric_files: Vec<MetricFile>,
         sender: mpsc::Sender<TaskResult>,
         label_keys: Vec<String>,
-        label_counts: &[u64],
+        label_counts: &[u64]
     ) -> Self {
         Self {
             config: Arc::new(config),
@@ -104,17 +105,20 @@ impl Horizontal {
         }
     }
 
-    pub(crate) async fn visit_all(&self) -> anyhow::Result<()> {
+    pub(crate) async fn visit_all(&self, expected_execution_count: usize) -> anyhow::Result<()> {
         let start = Instant::now();
         let range_iter = RangeIter::new(
             self.config.start_date,
             self.config.end_date,
+            self.config.generation_period,
             self.config.upload_interval,
         );
 
         let mut executions = LabelValuesIter::new(&self.all_ids)
-            .map(|label_values| {
+            .enumerate()
+            .map(|(order, label_values)| {
                 Execution::new(
+                    order,
                     self.config.clone(),
                     self.label_keys.clone(),
                     label_values,
@@ -123,6 +127,8 @@ impl Horizontal {
                 )
             })
             .collect::<Vec<Execution>>();
+
+        assert!(executions.len() == expected_execution_count);
 
         for iteration in range_iter {
             match iteration {
