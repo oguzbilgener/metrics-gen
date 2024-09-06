@@ -94,7 +94,7 @@ pub(crate) struct TaskResult {
 
 impl Execution {
     pub(crate) fn new(
-        order:usize,
+        order: usize,
         config: Arc<AppConfig>,
         label_keys: Arc<Vec<String>>,
         label_values: Vec<String>,
@@ -129,6 +129,7 @@ impl Execution {
             sample_count = self.generator.sample_count(),
             current_date = %current_date.to_rfc3339(),
             last_upload = %self.last_upload.to_rfc3339(),
+            id = self.label_values.last().unwrap_or(&"unknown".to_string()),
             "Uploading metrics"
         );
         self.last_upload = current_date;
@@ -159,7 +160,12 @@ impl Execution {
 
     async fn execute_all_inner(mut self) -> anyhow::Result<()> {
         let start = self.config.start_date;
-        let range_iter = RangeIter::new(start, self.config.end_date, self.config.generation_period, self.config.upload_interval);
+        let range_iter = RangeIter::new(
+            start,
+            self.config.end_date,
+            self.config.generation_period,
+            self.config.upload_interval,
+        );
 
         for iteration in range_iter {
             match iteration {
@@ -192,72 +198,95 @@ mod tests {
     #[test]
     fn test_range_iter() {
         let mut iter = RangeIter::new(
-            DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap().to_utc(),
-            DateTime::parse_from_rfc3339("2024-01-01T00:02:00Z").unwrap().to_utc(),
+            DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                .unwrap()
+                .to_utc(),
+            DateTime::parse_from_rfc3339("2024-01-01T00:02:00Z")
+                .unwrap()
+                .to_utc(),
             Duration::from_secs(15),
             Duration::from_secs(60),
         );
         assert_eq!(
             iter.next(),
             Some(RangeIteration::Generate(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:15Z").unwrap().to_utc()
+                DateTime::parse_from_rfc3339("2024-01-01T00:00:15Z")
+                    .unwrap()
+                    .to_utc()
             ))
         );
         assert_eq!(
             iter.next(),
             Some(RangeIteration::Generate(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:30Z").unwrap().to_utc()
+                DateTime::parse_from_rfc3339("2024-01-01T00:00:30Z")
+                    .unwrap()
+                    .to_utc()
             ))
         );
         assert_eq!(
             iter.next(),
             Some(RangeIteration::Generate(
-                DateTime::parse_from_rfc3339("2024-01-01T00:00:45Z").unwrap().to_utc()
+                DateTime::parse_from_rfc3339("2024-01-01T00:00:45Z")
+                    .unwrap()
+                    .to_utc()
             ))
         );
         assert_eq!(
             iter.next(),
             Some(RangeIteration::Generate(
-                DateTime::parse_from_rfc3339("2024-01-01T00:01:00Z").unwrap().to_utc()
+                DateTime::parse_from_rfc3339("2024-01-01T00:01:00Z")
+                    .unwrap()
+                    .to_utc()
             ))
         );
         assert_eq!(
             iter.next(),
             Some(RangeIteration::Upload(
-                DateTime::parse_from_rfc3339("2024-01-01T00:01:00Z").unwrap().to_utc()
+                DateTime::parse_from_rfc3339("2024-01-01T00:01:00Z")
+                    .unwrap()
+                    .to_utc()
             ))
         );
         assert_eq!(
             iter.next(),
             Some(RangeIteration::Generate(
-                DateTime::parse_from_rfc3339("2024-01-01T00:01:15Z").unwrap().to_utc()
+                DateTime::parse_from_rfc3339("2024-01-01T00:01:15Z")
+                    .unwrap()
+                    .to_utc()
             ))
         );
         assert_eq!(
             iter.next(),
             Some(RangeIteration::Generate(
-                DateTime::parse_from_rfc3339("2024-01-01T00:01:30Z").unwrap().to_utc()
+                DateTime::parse_from_rfc3339("2024-01-01T00:01:30Z")
+                    .unwrap()
+                    .to_utc()
             ))
         );
         assert_eq!(
             iter.next(),
             Some(RangeIteration::Generate(
-                DateTime::parse_from_rfc3339("2024-01-01T00:01:45Z").unwrap().to_utc()
+                DateTime::parse_from_rfc3339("2024-01-01T00:01:45Z")
+                    .unwrap()
+                    .to_utc()
             ))
         );
         assert_eq!(
             iter.next(),
             Some(RangeIteration::Generate(
-                DateTime::parse_from_rfc3339("2024-01-01T00:02:00Z").unwrap().to_utc()
+                DateTime::parse_from_rfc3339("2024-01-01T00:02:00Z")
+                    .unwrap()
+                    .to_utc()
             ))
         );
         assert_eq!(
             iter.next(),
             Some(RangeIteration::Upload(
-                DateTime::parse_from_rfc3339("2024-01-01T00:02:00Z").unwrap().to_utc()
+                DateTime::parse_from_rfc3339("2024-01-01T00:02:00Z")
+                    .unwrap()
+                    .to_utc()
             ))
         );
         assert_eq!(iter.next(), None);
-
     }
 }

@@ -57,8 +57,11 @@ async fn main() -> anyhow::Result<()> {
     setup_logging(&args.log_level)?;
 
     let config_file = AppConfig::from_file(&args.config).await?;
-    let metric_files =
-        load_metric_files(validate_metrics_path(&config_file.metrics_dir)?.as_ref(), &config_file.ignore).await?;
+    let metric_files = load_metric_files(
+        validate_metrics_path(&config_file.metrics_dir)?.as_ref(),
+        &config_file.ignore,
+    )
+    .await?;
 
     tokio::select! {
         res = runner::run(args, config_file, metric_files) => {

@@ -27,7 +27,10 @@ impl MetricFile {
     }
 }
 
-pub(crate) async fn load_metric_files(root: &Path, ignore: &[String]) -> anyhow::Result<Vec<MetricFile>> {
+pub(crate) async fn load_metric_files(
+    root: &Path,
+    ignore: &[String],
+) -> anyhow::Result<Vec<MetricFile>> {
     let mut metric_files = Vec::new();
     for entry in WalkDir::new(root) {
         let entry = entry.context("could not get dir entry")?;

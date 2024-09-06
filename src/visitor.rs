@@ -93,7 +93,7 @@ impl Horizontal {
         metric_files: Vec<MetricFile>,
         sender: mpsc::Sender<TaskResult>,
         label_keys: Vec<String>,
-        label_counts: &[u64]
+        label_counts: &[u64],
     ) -> Self {
         Self {
             config: Arc::new(config),
@@ -176,8 +176,10 @@ impl Horizontal {
         for _ in 0..label_counts.len() {
             all_ids.push(vec![]);
         }
+        let mut total_count = 1;
         for (i, &count) in label_counts.iter().enumerate() {
-            for _ in 0..count {
+            total_count *= count;
+            for _ in 0..total_count {
                 all_ids[i].push(generate_id());
             }
         }
@@ -199,7 +201,6 @@ async fn acquire_permit(semaphore: Arc<Semaphore>) -> anyhow::Result<OwnedSemaph
 struct LabelValuesIter<'v> {
     all_ids: &'v [Vec<String>],
     current: Vec<usize>,
-    done: bool,
 }
 
 impl<'v> LabelValuesIter<'v> {
@@ -208,7 +209,6 @@ impl<'v> LabelValuesIter<'v> {
         Self {
             all_ids,
             current: vec![0; all_ids.len()],
-            done: false,
         }
     }
 }
@@ -217,26 +217,24 @@ impl<'v> Iterator for LabelValuesIter<'v> {
     type Item = Vec<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.done {
+        if self.current[0] >= self.all_ids[0].len() {
             return None;
         }
         let answer = Some(
             self.current
                 .iter()
                 .enumerate()
-                .map(|(i, &j)| self.all_ids[i][j].clone())
+                .map(|(i, &c)| self.all_ids[i][c].clone())
                 .collect(),
         );
-        let mut done = true;
+        let last = self.current.len() - 1;
+        self.current[last] += 1;
+        let total_executions = self.all_ids.last().unwrap().len();
         for i in (0..self.current.len()).rev() {
-            if self.current[i] + 1 < self.all_ids[i].len() {
-                self.current[i] += 1;
-                done = false;
-                break;
+            if i > 0 && self.current[last] % (total_executions / self.all_ids[i - 1].len()) == 0 {
+                self.current[i - 1] += 1;
             }
-            self.current[i] = 0;
         }
-        self.done = done;
         answer
     }
 }
@@ -250,50 +248,73 @@ mod tests {
         let all_ids = vec![2, 3, 4];
         let result = Horizontal::generate_all_ids(&all_ids);
         assert_eq!(result.len(), 3);
+        let mut count = 1;
         for (i, ids) in result.iter().enumerate() {
-            assert_eq!(ids.len() as u64, all_ids[i]);
+            count *= all_ids[i];
+            assert_eq!(ids.len() as u64, count);
         }
     }
 
     #[test]
+    fn test_generate_all_ids_less() {
+        let all_ids = vec![1, 2, 2];
+        let result = Horizontal::generate_all_ids(&all_ids);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].len(), 1);
+        assert_eq!(result[1].len(), 2);
+        assert_eq!(result[2].len(), 4);
+
+        let iter = LabelValuesIter::new(&result);
+        assert_eq!(iter.count(), 4);
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
     fn test_label_values_iter() {
-        let all_ids = Horizontal::generate_all_ids(&[1, 2, 3]);
+        // 2 * 3 * 4 = 24
+        let all_ids = [
+            vec!["!", "?"],
+            vec!["1", "2", "3", "4", "5", "6"],
+            vec![
+                "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p",
+                "q", "r", "s", "t", "u", "v", "w", "x", "y",
+            ],
+        ];
+        let all_ids: Vec<Vec<String>> = all_ids
+            .iter()
+            .map(|ids| ids.iter().map(ToString::to_string).collect())
+            .collect();
 
         let mut iter = LabelValuesIter::new(&all_ids);
-        assert_eq!(
-            iter.current,
-            vec![0, 0, 0]
-        );
-        assert!(iter.next().is_some());
-        assert_eq!(
-            iter.current,
-            vec![0, 0, 1]
-        );
-        assert!(iter.next().is_some());
-        assert_eq!(
-            iter.current,
-            vec![0, 0, 2]
-        );
-        assert!(iter.next().is_some());
-        assert_eq!(
-            iter.current,
-            vec![0, 1, 0]
-        );
-        assert!(iter.next().is_some());
-        assert_eq!(
-            iter.current,
-            vec![0, 1, 1]
-        );
-        assert!(iter.next().is_some());
-        assert_eq!(
-            iter.current,
-            vec![0, 1, 2]
-        );
-        assert!(iter.next().is_some());
-        assert_eq!(
-            iter.current,
-            vec![0, 0, 0]
-        );
+        assert_eq!(iter.next(), Some(vec!["!".into(), "1".into(), "a".into()]));
+        assert_eq!(iter.next(), Some(vec!["!".into(), "1".into(), "b".into()]));
+        assert_eq!(iter.next(), Some(vec!["!".into(), "1".into(), "c".into()]));
+        assert_eq!(iter.next(), Some(vec!["!".into(), "1".into(), "d".into()]));
+
+        assert_eq!(iter.next(), Some(vec!["!".into(), "2".into(), "e".into()]));
+        assert_eq!(iter.next(), Some(vec!["!".into(), "2".into(), "f".into()]));
+        assert_eq!(iter.next(), Some(vec!["!".into(), "2".into(), "g".into()]));
+        assert_eq!(iter.next(), Some(vec!["!".into(), "2".into(), "h".into()]));
+
+        assert_eq!(iter.next(), Some(vec!["!".into(), "3".into(), "i".into()]));
+        assert_eq!(iter.next(), Some(vec!["!".into(), "3".into(), "j".into()]));
+        assert_eq!(iter.next(), Some(vec!["!".into(), "3".into(), "k".into()]));
+        assert_eq!(iter.next(), Some(vec!["!".into(), "3".into(), "l".into()]));
+
+        assert_eq!(iter.next(), Some(vec!["?".into(), "4".into(), "m".into()]));
+        assert_eq!(iter.next(), Some(vec!["?".into(), "4".into(), "n".into()]));
+        assert_eq!(iter.next(), Some(vec!["?".into(), "4".into(), "o".into()]));
+        assert_eq!(iter.next(), Some(vec!["?".into(), "4".into(), "p".into()]));
+
+        assert_eq!(iter.next(), Some(vec!["?".into(), "5".into(), "q".into()]));
+        assert_eq!(iter.next(), Some(vec!["?".into(), "5".into(), "r".into()]));
+        assert_eq!(iter.next(), Some(vec!["?".into(), "5".into(), "s".into()]));
+        assert_eq!(iter.next(), Some(vec!["?".into(), "5".into(), "t".into()]));
+
+        assert_eq!(iter.next(), Some(vec!["?".into(), "6".into(), "u".into()]));
+        assert_eq!(iter.next(), Some(vec!["?".into(), "6".into(), "v".into()]));
+        assert_eq!(iter.next(), Some(vec!["?".into(), "6".into(), "w".into()]));
+        assert_eq!(iter.next(), Some(vec!["?".into(), "6".into(), "x".into()]));
         assert_eq!(iter.next(), None);
     }
 }
