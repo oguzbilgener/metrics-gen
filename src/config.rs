@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::Context;
 use derivative::Derivative;
@@ -31,8 +31,8 @@ pub(crate) struct AppConfig {
     #[derivative(Default(value = "Duration::from_secs(600)"))]
     pub(crate) upload_interval: Duration,
 
-    #[derivative(Default(value = "vec![Label{name: \"id\".to_string(), count: 1}]"))]
-    pub(crate) labels: Vec<Label>,
+    #[serde(default)]
+    pub(crate) labelling_kind: LabellingKind,
 
     #[derivative(Default(value = "\"2024-01-01T00:00:00Z\".parse().unwrap()"))]
     pub(crate) start_date: chrono::DateTime<chrono::Utc>,
@@ -46,6 +46,27 @@ pub(crate) struct AppConfig {
 
     #[serde(default)]
     pub(crate) ignore: Vec<String>,
+}
+
+#[derive(Debug, Clone, Derivative, Deserialize)]
+#[derivative(Default)]
+#[serde(
+    deny_unknown_fields,
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub(crate) enum LabellingKind {
+    #[derivative(Default)]
+    Generated {
+        #[derivative(Default(value = "vec![Label{name: \"id\".to_string(), count: 1}]"))]
+        labels: Vec<Label>,
+    },
+    Provided {
+        #[derivative(Default(
+            value = "vec![Label{name: \"id\".to_string(), values: vec![\"__default__\".to_string()]}]"
+        ))]
+        labels: Vec<LabelValues>,
+    },
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
@@ -89,6 +110,13 @@ pub(crate) struct Label {
     pub(crate) count: u64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub(crate) struct LabelValues {
+    pub(crate) name: String,
+    pub(crate) values: Vec<String>,
+}
+
 impl AppConfig {
     pub(crate) async fn from_file(path: &str) -> anyhow::Result<Self> {
         let config = tokio::fs::read_to_string(path)
@@ -100,11 +128,27 @@ impl AppConfig {
     }
 
     pub(crate) fn label_keys(&self) -> Vec<String> {
-        self.labels.iter().map(|label| label.name.clone()).collect()
+        match self.labelling_kind {
+            LabellingKind::Generated { ref labels } => {
+                labels.iter().map(|label| label.name.clone()).collect()
+            }
+            LabellingKind::Provided { ref labels } => labels
+                .iter()
+                .map(|label_keys| label_keys.name.clone())
+                .collect(),
+        }
     }
 
     pub(crate) fn label_counts(&self) -> Vec<u64> {
-        self.labels.iter().map(|label| label.count).collect()
+        match self.labelling_kind {
+            LabellingKind::Generated { ref labels } => {
+                labels.iter().map(|label| label.count.clone()).collect()
+            }
+            LabellingKind::Provided { ref labels } => labels
+                .iter()
+                .map(|label| label.values.len() as u64)
+                .collect(),
+        }
     }
 }
 
@@ -185,16 +229,32 @@ pub(crate) mod validator {
         fn do_validate(&self) -> Vec<AppConfigValidationError> {
             let mut errors: Vec<AppConfigValidationError> = Vec::new();
 
-            if self.labels.is_empty() {
-                errors.push(AppConfigValidationError::EmptyLabels);
-            }
+            match &self.labelling_kind {
+                super::LabellingKind::Generated { ref labels } => {
+                    if labels.is_empty() {
+                        errors.push(AppConfigValidationError::EmptyLabels);
+                    }
 
-            errors.extend(
-                self.labels
-                    .iter()
-                    .flat_map(ValidateInner::do_validate)
-                    .map(AppConfigValidationError::Label),
-            );
+                    errors.extend(
+                        labels
+                            .iter()
+                            .flat_map(ValidateInner::do_validate)
+                            .map(AppConfigValidationError::Label),
+                    );
+                }
+                super::LabellingKind::Provided { labels } => {
+                    if labels.is_empty() {
+                        errors.push(AppConfigValidationError::EmptyLabels);
+                    }
+
+                    errors.extend(
+                        labels
+                            .iter()
+                            .flat_map(ValidateInner::do_validate)
+                            .map(AppConfigValidationError::Label),
+                    );
+                }
+            }
 
             if self.start_date >= self.end_date {
                 errors.push(AppConfigValidationError::EndDateBeforeStartDate);
@@ -234,6 +294,22 @@ pub(crate) mod validator {
             }
 
             if self.count == 0 {
+                errors.push(LabelError::InvalidCount);
+            }
+
+            errors
+        }
+    }
+
+    impl ValidateInner<LabelError> for super::LabelValues {
+        fn do_validate(&self) -> Vec<LabelError> {
+            let mut errors = Vec::new();
+
+            if self.name.is_empty() {
+                errors.push(LabelError::EmptyName);
+            }
+
+            if self.values.is_empty() {
                 errors.push(LabelError::InvalidCount);
             }
 
@@ -301,7 +377,7 @@ mod tests {
     #[test]
     fn test_validation_empty_labels() {
         let config = AppConfig {
-            labels: vec![],
+            labelling_kind: LabellingKind::Generated { labels: vec![] },
             ..Default::default()
         };
 

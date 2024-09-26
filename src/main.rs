@@ -27,7 +27,7 @@ use std::{env, str::FromStr as _};
 use crate::config::AppConfig;
 use crate::metric_file::{load_metric_files, validate_metrics_path};
 use anyhow::Context;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use tracing::{error, info, trace};
 // use tracing_indicatif::IndicatifLayer;
 // use tracing_subscriber::layer::SubscriberExt;
@@ -48,6 +48,16 @@ pub(crate) struct Args {
     /// Concurrency
     #[arg(long, default_value = "8", short = 'C')]
     pub(crate) concurrency: usize,
+
+    /// Subcommands
+    #[command(subcommand)]
+    pub(crate) command: Command,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum Command {
+    Backfill,
+    Realtime,
 }
 
 #[tokio::main]
