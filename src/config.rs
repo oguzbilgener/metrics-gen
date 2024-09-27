@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 
 use anyhow::Context;
 use derivative::Derivative;
@@ -32,7 +32,7 @@ pub(crate) struct AppConfig {
     pub(crate) upload_interval: Duration,
 
     #[serde(default)]
-    pub(crate) labelling_kind: LabellingKind,
+    pub(crate) labelling_type: LabellingType,
 
     #[derivative(Default(value = "\"2024-01-01T00:00:00Z\".parse().unwrap()"))]
     pub(crate) start_date: chrono::DateTime<chrono::Utc>,
@@ -55,7 +55,7 @@ pub(crate) struct AppConfig {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-pub(crate) enum LabellingKind {
+pub(crate) enum LabellingType {
     #[derivative(Default)]
     Generated {
         #[derivative(Default(value = "vec![Label{name: \"id\".to_string(), count: 1}]"))]
@@ -128,11 +128,11 @@ impl AppConfig {
     }
 
     pub(crate) fn label_keys(&self) -> Vec<String> {
-        match self.labelling_kind {
-            LabellingKind::Generated { ref labels } => {
+        match self.labelling_type {
+            LabellingType::Generated { ref labels } => {
                 labels.iter().map(|label| label.name.clone()).collect()
             }
-            LabellingKind::Provided { ref labels } => labels
+            LabellingType::Provided { ref labels } => labels
                 .iter()
                 .map(|label_keys| label_keys.name.clone())
                 .collect(),
@@ -140,14 +140,38 @@ impl AppConfig {
     }
 
     pub(crate) fn label_counts(&self) -> Vec<u64> {
-        match self.labelling_kind {
-            LabellingKind::Generated { ref labels } => {
-                labels.iter().map(|label| label.count.clone()).collect()
+        match self.labelling_type {
+            LabellingType::Generated { ref labels } => {
+                labels.iter().map(|label| label.count).collect()
             }
-            LabellingKind::Provided { ref labels } => labels
+            LabellingType::Provided { ref labels } => labels
                 .iter()
                 .map(|label| label.values.len() as u64)
                 .collect(),
+        }
+    }
+
+    pub(crate) fn execution_count(&self) -> u64 {
+        self.label_counts_iter().product()
+    }
+
+    pub(crate) fn provided_labels(&self) -> Option<Vec<Vec<String>>> {
+        match self.labelling_type {
+            LabellingType::Generated { .. } => None,
+            LabellingType::Provided { ref labels } => {
+                Some(labels.iter().map(|label| label.values.clone()).collect())
+            }
+        }
+    }
+
+    fn label_counts_iter(&self) -> Box<dyn Iterator<Item = u64> + '_> {
+        match self.labelling_type {
+            LabellingType::Generated { ref labels } => {
+                Box::new(labels.iter().map(|label| label.count))
+            }
+            LabellingType::Provided { ref labels } => {
+                Box::new(labels.iter().map(|label| label.values.len() as u64))
+            }
         }
     }
 }
@@ -195,6 +219,8 @@ pub(crate) mod validator {
         Label(LabelError),
         #[error("start date must be before end date")]
         EndDateBeforeStartDate,
+        #[error("vertical mode cannot be used with provided labels currently")]
+        InvalidLabelTypeModeCombo,
     }
 
     #[derive(Debug, Error)]
@@ -229,8 +255,8 @@ pub(crate) mod validator {
         fn do_validate(&self) -> Vec<AppConfigValidationError> {
             let mut errors: Vec<AppConfigValidationError> = Vec::new();
 
-            match &self.labelling_kind {
-                super::LabellingKind::Generated { ref labels } => {
+            match &self.labelling_type {
+                super::LabellingType::Generated { ref labels } => {
                     if labels.is_empty() {
                         errors.push(AppConfigValidationError::EmptyLabels);
                     }
@@ -242,7 +268,11 @@ pub(crate) mod validator {
                             .map(AppConfigValidationError::Label),
                     );
                 }
-                super::LabellingKind::Provided { labels } => {
+                super::LabellingType::Provided { labels } => {
+                    if self.mode == super::Mode::Vertical {
+                        errors.push(AppConfigValidationError::InvalidLabelTypeModeCombo);
+                    }
+
                     if labels.is_empty() {
                         errors.push(AppConfigValidationError::EmptyLabels);
                     }
@@ -377,7 +407,7 @@ mod tests {
     #[test]
     fn test_validation_empty_labels() {
         let config = AppConfig {
-            labelling_kind: LabellingKind::Generated { labels: vec![] },
+            labelling_type: LabellingType::Generated { labels: vec![] },
             ..Default::default()
         };
 

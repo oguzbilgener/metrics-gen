@@ -96,12 +96,12 @@ impl Horizontal {
         label_counts: &[u64],
     ) -> Self {
         Self {
-            config: Arc::new(config),
             metric_files,
             semaphore: Arc::new(Semaphore::new(concurrency)),
             sender,
             label_keys: Arc::new(label_keys),
-            all_ids: Self::generate_all_ids(label_counts),
+            all_ids: Self::get_ids(&config, label_counts),
+            config: Arc::new(config),
         }
     }
 
@@ -169,6 +169,12 @@ impl Horizontal {
         }
 
         Ok(())
+    }
+
+    fn get_ids(config: &AppConfig, label_counts: &[u64]) -> Vec<Vec<String>> {
+        config
+            .provided_labels()
+            .unwrap_or_else(|| Self::generate_all_ids(label_counts))
     }
 
     fn generate_all_ids(label_counts: &[u64]) -> Vec<Vec<String>> {
