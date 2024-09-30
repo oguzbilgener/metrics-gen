@@ -16,8 +16,10 @@ pub(crate) struct AppConfig {
     #[derivative(Default(value = "String::from(\"./metrics\")"))]
     pub(crate) metrics_dir: String,
 
+    /// The mode in which the backfill should be executed
+    /// This has no effect on the realtime mode
     #[serde(default)]
-    pub(crate) mode: Mode,
+    pub(crate) mode: BackfillMode,
 
     #[serde(with = "humantime_serde")]
     #[derivative(Default(value = "Duration::from_secs(0)"))]
@@ -71,9 +73,11 @@ pub(crate) enum LabellingType {
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub(crate) enum Mode {
+pub(crate) enum BackfillMode {
+    /// Backfill all label combinations in parallel for each timestamp
     #[default]
     Horizontal,
+    /// Finish backfilling one label combination from start to end before moving to the next
     Vertical,
 }
 
@@ -269,7 +273,7 @@ pub(crate) mod validator {
                     );
                 }
                 super::LabellingType::Provided { labels } => {
-                    if self.mode == super::Mode::Vertical {
+                    if self.mode == super::BackfillMode::Vertical {
                         errors.push(AppConfigValidationError::InvalidLabelTypeModeCombo);
                     }
 

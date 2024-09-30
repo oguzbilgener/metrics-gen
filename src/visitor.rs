@@ -6,11 +6,13 @@ use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
 
 use crate::{
     config::AppConfig,
-    execution::{Execution, RangeIter, RangeIteration, TaskResult},
+    execution::{Execution, RangeIter, RangeIteration, RealtimeIter, TaskResult},
     metric_file::MetricFile,
+    Command,
 };
 
 pub(crate) struct Vertical {
+    command: Command,
     config: Arc<AppConfig>,
     metric_files: Vec<MetricFile>,
     semaphore: Arc<Semaphore>,
@@ -21,6 +23,7 @@ pub(crate) struct Vertical {
 
 impl Vertical {
     pub(crate) fn new(
+        command: Command,
         concurrency: usize,
         config: AppConfig,
         metric_files: Vec<MetricFile>,
@@ -29,6 +32,7 @@ impl Vertical {
         label_counts: Vec<u64>,
     ) -> Self {
         Self {
+            command,
             config: Arc::new(config),
             metric_files,
             semaphore: Arc::new(Semaphore::new(concurrency)),
@@ -52,6 +56,7 @@ impl Vertical {
             if level == self.label_keys.len() {
                 let permit = acquire_permit(self.semaphore.clone()).await?;
                 let execution = Execution::new(
+                    self.command,
                     0,
                     self.config.clone(),
                     self.label_keys.clone(),
@@ -78,6 +83,7 @@ impl Vertical {
 }
 
 pub(crate) struct Horizontal {
+    command: Command,
     config: Arc<AppConfig>,
     metric_files: Vec<MetricFile>,
     semaphore: Arc<Semaphore>,
@@ -88,6 +94,7 @@ pub(crate) struct Horizontal {
 
 impl Horizontal {
     pub(crate) fn new(
+        command: Command,
         concurrency: usize,
         config: AppConfig,
         metric_files: Vec<MetricFile>,
@@ -96,6 +103,7 @@ impl Horizontal {
         label_counts: &[u64],
     ) -> Self {
         Self {
+            command,
             metric_files,
             semaphore: Arc::new(Semaphore::new(concurrency)),
             sender,
@@ -107,17 +115,24 @@ impl Horizontal {
 
     pub(crate) async fn visit_all(&self, expected_execution_count: usize) -> anyhow::Result<()> {
         let start = Instant::now();
-        let range_iter = RangeIter::new(
-            self.config.start_date,
-            self.config.end_date,
-            self.config.generation_period,
-            self.config.upload_interval,
-        );
+        let range_iter: Box<dyn Iterator<Item = RangeIteration>> = match self.command {
+            Command::Backfill => Box::new(RealtimeIter::new(
+                self.config.generation_period,
+                self.config.upload_interval,
+            )),
+            Command::Realtime => Box::new(RangeIter::new(
+                self.config.start_date,
+                self.config.end_date,
+                self.config.generation_period,
+                self.config.upload_interval,
+            )),
+        };
 
         let mut executions = LabelValuesIter::new(&self.all_ids)
             .enumerate()
             .map(|(order, label_values)| {
                 Execution::new(
+                    self.command,
                     order,
                     self.config.clone(),
                     self.label_keys.clone(),
@@ -132,6 +147,9 @@ impl Horizontal {
 
         for iteration in range_iter {
             match iteration {
+                RangeIteration::SleepUntil(until) => {
+                    tokio::time::sleep_until(until).await;
+                }
                 RangeIteration::Generate(current_date) => {
                     executions.iter_mut().try_for_each(|execution| {
                         execution

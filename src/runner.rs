@@ -5,7 +5,7 @@ use tracing::{info, info_span, Span};
 use tracing_indicatif::span_ext::IndicatifSpanExt as _;
 
 use crate::{
-    config::{AppConfig, Mode},
+    config::{AppConfig, BackfillMode},
     execution::TaskResult,
     metric_file::MetricFile,
     visitor::{Horizontal as HorizontalVisitor, Vertical as VerticalVisitor},
@@ -34,8 +34,9 @@ pub(crate) async fn run(
     let label_keys = config.label_keys();
     let label_counts = config.label_counts();
 
-    if config.mode == Mode::Vertical {
+    if config.mode == BackfillMode::Vertical {
         VerticalVisitor::new(
+            args.command,
             args.concurrency,
             config,
             metric_files,
@@ -47,6 +48,7 @@ pub(crate) async fn run(
         .await?;
     } else {
         HorizontalVisitor::new(
+            args.command,
             args.concurrency,
             config,
             metric_files,

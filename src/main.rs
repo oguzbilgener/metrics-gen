@@ -54,7 +54,7 @@ pub(crate) struct Args {
     pub(crate) command: Command,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Command {
     Backfill,
     Realtime,

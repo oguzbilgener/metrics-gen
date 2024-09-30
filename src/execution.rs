@@ -10,8 +10,10 @@ use tracing::trace;
 
 use crate::{
     config::AppConfig, generate::SampleGenerator, metric_file::MetricFile, upload::upload_metrics,
+    Command,
 };
 
+/// The time range iterator for backfilling
 pub(crate) struct RangeIter {
     end_date: DateTime<Utc>,
     generate_interval: TimeDelta,
@@ -23,8 +25,18 @@ pub(crate) struct RangeIter {
     time_to_upload: bool,
 }
 
+pub(crate) struct RealtimeIter {
+    generate_interval: TimeDelta,
+    upload_interval: TimeDelta,
+
+    last_upload: DateTime<Utc>,
+
+    time_to_upload: bool,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) enum RangeIteration {
+    SleepUntil(tokio::time::Instant),
     Upload(DateTime<Utc>),
     Generate(DateTime<Utc>),
 }
@@ -70,7 +82,42 @@ impl Iterator for RangeIter {
     }
 }
 
+impl RealtimeIter {
+    pub(crate) fn new(generate_interval: Duration, upload_interval: Duration) -> Self {
+        Self {
+            generate_interval: TimeDelta::from_std(generate_interval).unwrap(),
+            upload_interval: TimeDelta::from_std(upload_interval).unwrap(),
+
+            last_upload: Utc::now(),
+
+            time_to_upload: false,
+        }
+    }
+}
+
+impl Iterator for RealtimeIter {
+    type Item = RangeIteration;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.time_to_upload {
+            self.time_to_upload = false;
+            self.last_upload = Utc::now();
+            return Some(RangeIteration::Upload(self.last_upload));
+        }
+        let current_date = Utc::now();
+        if current_date - self.last_upload >= self.upload_interval {
+            self.time_to_upload = true;
+            Some(RangeIteration::Generate(current_date))
+        } else {
+            Some(RangeIteration::SleepUntil(
+                tokio::time::Instant::now() + self.generate_interval.to_std().unwrap(),
+            ))
+        }
+    }
+}
+
 pub(crate) struct Execution {
+    command: Command,
     order: usize,
     /// Keys for the predefined labels in the config
     label_keys: Arc<Vec<String>>,
@@ -94,6 +141,7 @@ pub(crate) struct TaskResult {
 
 impl Execution {
     pub(crate) fn new(
+        command: Command,
         order: usize,
         config: Arc<AppConfig>,
         label_keys: Arc<Vec<String>>,
@@ -102,6 +150,7 @@ impl Execution {
         semaphore: Option<Arc<Semaphore>>,
     ) -> Self {
         Self {
+            command,
             order,
             generator: SampleGenerator::new(config.randomization.clone(), metric_files),
             last_upload: config.start_date,
@@ -120,7 +169,7 @@ impl Execution {
     pub(crate) async fn upload(&mut self, current_date: DateTime<Utc>) -> anyhow::Result<()> {
         let _permit = acquire_permit(self.semaphore.clone()).await?;
         // Sleep for the upload cooldown period to avoid overwhelming the server
-        if self.config.upload_cooldown > Duration::ZERO {
+        if self.command != Command::Realtime && self.config.upload_cooldown > Duration::ZERO {
             tokio::time::sleep(self.config.upload_cooldown).await;
         }
         trace!(
@@ -171,6 +220,7 @@ impl Execution {
             match iteration {
                 RangeIteration::Upload(current_date) => self.upload(current_date).await?,
                 RangeIteration::Generate(current_date) => self.generate(current_date)?,
+                RangeIteration::SleepUntil(_) => {}
             }
         }
         Ok(())
