@@ -46,7 +46,7 @@ With this config file, it iterates between the start date and the end date, gene
 3. Run metrics-gen:
 
 ```bash
-metrics-gen backfill -c ./config.yml --concurrency 1
+metrics-gen -c ./config.yml --concurrency 1 backfill
 ```
 
 You can try to increase the concurrency depending on how capable your server is.

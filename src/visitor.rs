@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Instant};
 use anyhow::Context as _;
 use futures_util::{future::BoxFuture, FutureExt as _};
 use tokio::sync::{mpsc, OwnedSemaphorePermit, Semaphore};
+use tracing::debug;
 
 use crate::{
     config::AppConfig,
@@ -116,11 +117,11 @@ impl Horizontal {
     pub(crate) async fn visit_all(&self, expected_execution_count: usize) -> anyhow::Result<()> {
         let start = Instant::now();
         let range_iter: Box<dyn Iterator<Item = RangeIteration>> = match self.command {
-            Command::Backfill => Box::new(RealtimeIter::new(
+            Command::Realtime => Box::new(RealtimeIter::new(
                 self.config.generation_period,
                 self.config.upload_interval,
             )),
-            Command::Realtime => Box::new(RangeIter::new(
+            Command::Backfill => Box::new(RangeIter::new(
                 self.config.start_date,
                 self.config.end_date,
                 self.config.generation_period,
@@ -148,6 +149,10 @@ impl Horizontal {
         for iteration in range_iter {
             match iteration {
                 RangeIteration::SleepUntil(until) => {
+                    debug!(
+                        "Sleeping for {:?}",
+                        until.duration_since(tokio::time::Instant::now())
+                    );
                     tokio::time::sleep_until(until).await;
                 }
                 RangeIteration::Generate(current_date) => {
