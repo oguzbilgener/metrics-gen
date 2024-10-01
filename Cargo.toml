@@ -15,7 +15,7 @@ humantime-serde = "1"
 http = "1"
 indicatif = "0.17"
 # Add ability to reset collected samples.
-openmetrics-parser = { git = "https://github.com/oguzbilgener/openmetrics-parser", rev = "07a94d82054f649586c63cc4840d5bba48d779cb" }
+openmetrics-parser = { git = "https://github.com/oguzbilgener/openmetrics-parser", rev = "53e75d391263f21b418779ae44f5c268ecacb909" }
 prost = "0.12"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
